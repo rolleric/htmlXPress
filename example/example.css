@@ -1,0 +1,31 @@
+/* Example CSS definitions */
+
+/* The following settings are a proof of concept, the settings in the
+ * style sheet mainly just change the colours.
+ * 
+ * Please compare this CSS to the file generated in the results directory
+ * (which is only 287 bytes large).
+ */
+ 
+body {
+    color: black;
+    background: white;
+    font-family: verdana, geneva, sans-serif;
+    font-size: 14px;
+    width: 570px;
+}
+    
+#Important {				/* Important stuff is shown in red */
+	color: red;
+}
+
+#page_header {				/* The header is in blue */
+	color: blue;
+}
+
+#page_footer {				/* The footer uses a smaller italic font in green */
+	color: green;
+	font-size: smaller;
+    font-style: italic;
+    text-align: center;
+}
