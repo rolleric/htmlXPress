@@ -16,22 +16,22 @@ You can easily extend the processing with your own site-specific Perl code.
 
 Two example files are provided in the example directory, an HTML file and a CSS file. To run the script, you can call it directly from a command prompt:
 
-```bash
-> cd example
-> ../htmlXPress.pl -out ./results example.html
-> ../htmlXPress.pl -out ./results example.css
+```csh
+% cd example
+% ../htmlXPress.pl -out results example.html
+% ../htmlXPress.pl -out results example.css
 ```
 
 Or you can use the `MakeFile` in the example directory:
 
-```bash
-> cd example
-> make
+```csh
+% cd example
+% make
 ```
 
 The compressed files are placed in the `example/results` directory.
 
-For more complex HTML compressed pages, you can take a look at the page sources for the files at [http://tredje.se]().
+For examples of more complex HTML pages, compressed by htmlXPress, you can take a look at the page sources for the files at [http://tredje.se]().
 
 
 # Installation
@@ -40,7 +40,7 @@ You need to have [Perl](www.perl.org) installed, probably at least Perl 5. On UN
 
 Copy the `htmlXPress.pl` file into a directory of your choice; just make sure its file permissions allow it to be executed (`chmod 750 htmlXPress.pl`).
 
-Optionally, you can create a user-specific configuration file: ~/.htmlxpressrc (see below).
+Optionally, you can create a user-specific configuration file: `~/.htmlxpressrc` (see below).
 
 
 # Usage
@@ -49,37 +49,37 @@ Optionally, you can create a user-specific configuration file: ~/.htmlxpressrc (
 htmlXPress.pl [Options] file_to_compress
 ```
 
-## Options
+### Options
 
-### -(no)banner
+#### -(no)banner
 
 Using **-banner** (default) will add an htmlXPress version banner in the output. To disable, use **-nobanner**.
 
-### -(no)href_check
+#### -(no)href_check
 
 To check embedded links, use **-href_check**. The default is **-nohref_check**.
 
-### -(no)debug
+#### -(no)debug
 
 Using **-debug** will output additional progress messages and variable settings. The default is **-nodebug**. For regular use, you may prefer **-verbose**.
 
-### -help | -usage
+#### -help | -usage
 
 With **-help** or **-usage**, you will be presented with a short usage info and no processing is done. When given twice, the usage info will be more detailed.
 
-### -inplace | -overwrite
+#### -inplace | -overwrite
 
 Use with extreme caution! This option will irreversibly overwrite the orignial file. Try not to use this. Instead, use **-out** to write the results into a different directory.
 
-### -(no)lint
+#### -(no)lint
 
 For XHTML (or files that are in XML format), the **-lint** option will call `xmllint` to run a syntax check on the generated output file. The default is **-nolint**.
 
-### -out dir_name
+#### -out dir_name
 
 Our favourite option: Use **-out** to specify into which directory the result file should be placed. As an alternative, either of the config file or the site file may specify the output directory throught the **$destination** variable (see below).
 
-### -(no)verbose
+#### -(no)verbose
 
 When given, **-verbose** will produce a set of progress messages. The default is **-noverbose**. For even more messages, use **-debug**.
 
@@ -89,7 +89,7 @@ When given, **-verbose** will produce a set of progress messages. The default is
 You can create a config file in your home directory, named `.htmlxpressrc` in which you can predefine a set of variables. Here are all the default settings, none of which are used as they are turned off with comment characters "##":
 
 ```perl
-# .htmlxpressrc - config for htmlXPress.pl
+# ~/.htmlxpressrc - config for htmlXPress.pl
 
 # Whether to add an htmlXPress version banner.
 ## $add_banner = 1;
@@ -107,7 +107,7 @@ You can create a config file in your home directory, named `.htmlxpressrc` in wh
 ## $destination = "";
 
 # The mapping of file extensions and how to handle them:
-## $file_table = # see below
+## %file_table = # for an example, see core within htmlXPress.pl
 
 # The path to the SetFile executable to set Macintosh creator codes:
 ## $set_file_exec = "/usr/bin/SetFile";
@@ -124,7 +124,7 @@ You can create a config file in your home directory, named `.htmlxpressrc` in wh
 
 You can add your personal macros or replacement rules using your own Perl code.
 
-By default, htmlXPress.pl will load code that you have placed in a "site.pm" module file. Within that module, you would use `pre_process`, `process`, and `post_process` sub-routines which htmlXPress.pl will execute.
+By default, any code that you have placed in a "site.pm" module file will be loaded. Within that module, you would use `pre_process`, `process`, and `post_process` sub-routines which will be executed for each file that is processed.
 
 Additionally, you can define new settings for the same variables as in the config file (see above); just declare them with `our`:
 
@@ -150,7 +150,7 @@ sub process($$)
 
 All variables are described in the header section of the `htmlXPress.pl` script. The `%file_table` deserves special mentioning as it controls how certain file types are handled:
 
-## %file_table
+#### %file_table
 
 The `%file_table` variable contains a hash table, mapping file extensions to settings that should be used for files of that type. The default settings for files are:
 
@@ -168,7 +168,7 @@ The `%file_table` variable contains a hash table, mapping file extensions to set
 
 In detail: There is no file compression (`compress => 0`), no specific Macintosh creator code (`creator => ""`), no non-ASCII character handling (`non_ascii => 0`), and the output text is not wrapped (`textwidth => 0`). NB. The info string is ignored.
 
-For HTML files to be compressed, an entry in the file_table must exist that matches the .html or .htm file extension:
+For HTML files to be compressed, an entry in the `%file_table` must exist that matches the .html or .htm file extension:
 
 ```perl
 %file_table = {
@@ -191,6 +191,6 @@ To add your own file type, you can declare it in the site package file. An examp
 
 # History
 
-htmlXPress originally evolved as a MacPerl droplet on Mac OS 9. Thankfully, with Mac OS X, it now works straight out of the box.
+Back in 1999, htmlXPress originally evolved as a MacPerl droplet on Mac OS 9. Thankfully, with Mac OS X, it now works straight out of the box.
 
 The complete version history is available on [tredje.se](http://tredje.se/history.html?p=hxpr).
