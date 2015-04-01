@@ -590,10 +590,6 @@ FILE : foreach my $file ( @ARGV )
         s/<<date>>/$date/ig;
         s/<<file>>/$filename/ig;
         
-        # A urlfile is "abc.html", not "abc.html.sv".
-        $filename =~ s/(\.\S+)\.\w\w/$1/;
-        s/<<urlfile>>/$filename/ig;
-        
         $wrap = 0 if s/<<nowrap>>//ig;
 
 

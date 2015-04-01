@@ -1,15 +1,12 @@
-#### IN PROGRESS : If you see this message, then the repository is not yet fully set up, sorry!
-
-
 # htmlXPress
 
-This is a Perl-based solution to compress, and process HTML and CSS files.
+This is a Perl-based solution to compress, and to process HTML and CSS files.
 
-The main `htmlXPress.pl` script removes embedded comments and unnecessary whitespace, while leaving the formatting of the page intact. Embedded PHP code or Javascript are also not harmed.
+The `htmlXPress.pl` script removes embedded comments and unnecessary whitespace, while leaving the formatting of the page intact. Embedded PHP code or Javascript are also not harmed.
 
 Before this compression takes place, the script also expands custom macros like `<<date>>` (note the double `<<` and `>>`) which will be replaced with today's date.
 
-You can easily extend the processing with your own site-specific Perl code.
+You can easily extend the processing with your own macros and other site-specific Perl code.
 
 
 # Example
@@ -36,9 +33,16 @@ For examples of more complex HTML pages, compressed by htmlXPress, you can take 
 
 # Installation
 
-You need to have [Perl](www.perl.org) installed, probably at least Perl 5. On UNIX /Linux-based systems (incl. Mac OS X), Perl is generally pre-installed. On a terminal prompt, you can try `perl --version` to check.
+You need to have [Perl](www.perl.org) installed, probably at least Perl 5. On UNIX/Linux-based systems (incl. Mac OS X), Perl is generally pre-installed. On a terminal prompt, you can try `perl --version` to check.
 
-Copy the `htmlXPress.pl` file into a directory of your choice; just make sure its file permissions allow it to be executed (`chmod 750 htmlXPress.pl`).
+Copy the `htmlXPress.pl` file into a directory of your choice; just make sure its file permissions allow it to be executed (`chmod 750 htmlXPress.pl`). Also, if you use a Makefile similar to the one in the example folder, you will need to adjust the path to be able to locate your copy of the script. For instance:
+
+```make
+HXP=/usr/local/scripts/htmlXPress.pl
+OUT=/Users/goblin/Sites/my_site
+
+...
+```
 
 Optionally, you can create a user-specific configuration file: `~/.htmlxpressrc` (see below).
 
@@ -61,11 +65,11 @@ To check embedded links, use **-href_check**. The default is **-nohref_check**.
 
 #### -(no)debug
 
-Using **-debug** will output additional progress messages and variable settings. The default is **-nodebug**. For regular use, you may prefer **-verbose**.
+The **-debug** option will output additional progress messages and variable settings. The default is **-nodebug**. For regular use, you may prefer **-verbose**.
 
 #### -help | -usage
 
-With **-help** or **-usage**, you will be presented with a short usage info and no processing is done. When given twice, the usage info will be more detailed.
+With **-help** or **-usage**, you will be presented with a short usage info and no processing is done. When issued twice, the usage info will be more detailed.
 
 #### -inplace | -overwrite
 
@@ -73,11 +77,11 @@ Use with extreme caution! This option will irreversibly overwrite the orignial f
 
 #### -(no)lint
 
-For XHTML (or files that are in XML format), the **-lint** option will call `xmllint` to run a syntax check on the generated output file. The default is **-nolint**.
+For XHTML (or files that are in XML format), the **-lint** option will call "xmllint" to run a syntax check on the generated output file. The default is **-nolint**.
 
 #### -out dir_name
 
-Our favourite option: Use **-out** to specify into which directory the result file should be placed. As an alternative, either of the config file or the site file may specify the output directory throught the **$destination** variable (see below).
+Our favourite option: Use **-out** to specify into which directory the result file should be placed. As an alternative, the config file or the site file may specify the output directory throught the **$destination** variable (see below).
 
 #### -(no)verbose
 
@@ -86,7 +90,7 @@ When given, **-verbose** will produce a set of progress messages. The default is
 
 # Configuration
 
-You can create a config file in your home directory, named `.htmlxpressrc` in which you can predefine a set of variables. Here are all the default settings, none of which are used as they are turned off with comment characters "##":
+You can create a config file in your home directory, named `.htmlxpressrc` in which you can predefine a set of variables (following ordinary Perl syntax). Here are all the default settings, none of which are used as they are turned off with comment characters "##":
 
 ```perl
 # ~/.htmlxpressrc - config for htmlXPress.pl
@@ -107,7 +111,7 @@ You can create a config file in your home directory, named `.htmlxpressrc` in wh
 ## $destination = "";
 
 # The mapping of file extensions and how to handle them:
-## %file_table = # for an example, see core within htmlXPress.pl
+## %file_table = {};    # see htmlXPress.pl for an example
 
 # The path to the SetFile executable to set Macintosh creator codes:
 ## $set_file_exec = "/usr/bin/SetFile";
@@ -124,7 +128,7 @@ You can create a config file in your home directory, named `.htmlxpressrc` in wh
 
 You can add your personal macros or replacement rules using your own Perl code.
 
-By default, any code that you have placed in a "site.pm" module file will be loaded. Within that module, you would use `pre_process`, `process`, and `post_process` sub-routines which will be executed for each file that is processed.
+By default, any code that you have placed in a "site.pm" module file will be loaded. Within that module, you would define `&pre_process`, `&process`, and `&post_process` sub-routines which will be executed once for each file.
 
 Additionally, you can define new settings for the same variables as in the config file (see above); just declare them with `our`:
 
@@ -137,9 +141,9 @@ our $destination = "/Library/Web Pages/";
 
 sub process($$)
 {
-    my ( $filename, $type ) = @_;	# e.g. "example.html", "html"
+    my ( $filename, $type ) = @_;       # e.g. "example.html", "html"
 
-    s|<<email>>|info\@example.com|g;	# <<email>>  ->  info@example.com
+    s|<<email>>|info\@example.com|g;    # <<email>>  ->  info@example.com
 }
 
 1;  # always return a true value!
@@ -148,7 +152,7 @@ sub process($$)
 
 # Variables
 
-All variables are described in the header section of the `htmlXPress.pl` script. The `%file_table` deserves special mentioning as it controls how certain file types are handled:
+All variables are described in the header section of the `htmlXPress.pl` script. The `%file_table` deserves special mentioning as it controls how selected file types are handled:
 
 #### %file_table
 
@@ -184,9 +188,42 @@ For HTML files to be compressed, an entry in the `%file_table` must exist that m
 };
 ````
 
-In detail: Files with the .html extension will be fully compressed (`compress => 2`), non-ASCII characters will be converted (`non_ascii => 1`), and the compressed output is line-wrapped to 80 characters (`textwidth => 80`). File ending in .htm use the same settings as .html files.
+In detail: Files with the .html extension will be fully compressed (`compress => 2`), non-ASCII characters will be converted (`non_ascii => 1`), and if possible, the compressed output is line-wrapped to 80 characters (`textwidth => 80`). File ending in .htm use the same settings as .html files.
 
 To add your own file type, you can declare it in the site package file. An example is provided in the "site.pm" file within the example directory.
+
+
+# Macros
+
+The following macros are predefined:
+
+| Macro         | Description
+| :------------ | :--------------------------------------------------------
+| `<<date>>`    | Is replaced by today's date, using the format specified in the $date_format variable.
+| `<<longdate>>`| Is replaced by today's date, using the default format of your locale.
+| `<<file>>`    | Is replaced by the current file name.
+| `<<nowrap>>`  | Is removed. It disables text wrapping for this file.
+
+
+Also, there are some handy shortcuts that are available when non-ASCII character replacement is enabled:
+
+| Shortcut      | Replacement   | Description
+| :------------ | :-------------| :-----------------------------------------
+| `\ `          | `&nbsp;`      | A backslash before a space: Non-Breaking Space
+| `\&`          | `&amp;`       | Ampersand (&)
+| `\\<`         | `\&lt;`       | \&gt;
+| `\<`          | `&lt;`        | Less Than (<)
+| `\\>`         | `\&gt;`       | \&gt;
+| `\>`          | `&gt;`        | Greater Than (>)
+
+
+# Known Issues
+
+* Text wrapping is a purely cosmetic feature that has no practical use. It is disabled whenever embedded JavaScript code is detected (or when you have added the `<<nowrap>>` marker macro). You should note that certain constructs (like very long URLs) can never be wrapped without breaking the functionality of the page. Therefore, the resulting lines may well exceed the limit that you have specified for the "textwidth".
+
+* The conversion of non-ASCII characters is incomplete. Feel free to submit additional character conversions.
+
+* Input files need to be UTF-8 encoded to be able to correctly detect any non-ASCII characters.
 
 
 # History
