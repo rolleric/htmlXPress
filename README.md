@@ -28,7 +28,7 @@ Or you can use the `MakeFile` in the example directory:
 
 The compressed files are placed in the `example/results` directory.
 
-For examples of more complex HTML pages, compressed by htmlXPress, you can take a look at the page sources for the files at [http://tredje.se]().
+For examples of more complex HTML pages, compressed by htmlXPress, you can take a look at the page sources for the files at http://tredje.se.
 
 
 # Installation
