@@ -172,7 +172,7 @@ The `%file_table` variable contains a hash table, mapping file extensions to set
 
 In detail: There is no file compression (`compress => 0`), no specific Macintosh creator code (`creator => ""`), no non-ASCII character handling (`non_ascii => 0`), and the output text is not wrapped (`textwidth => 0`). NB. The info string is ignored.
 
-For HTML files to be compressed, an entry in the `%file_table` must exist that matches the .html or .htm file extension:
+For HTML files to be compressed, another entry in the `%file_table` is predefined for the .html and .htm file extensions:
 
 ```perl
 %file_table = {
