@@ -205,23 +205,21 @@ The following macros are predefined:
 | `<<nowrap>>`  | Is removed. It disables text wrapping for this file.
 
 
-Also, there are some handy shortcuts that are available when non-ASCII character replacement is enabled:
+Also, there are some handy shortcuts that are available when non-ASCII character replacement is enabled (these changed in version 4.1):
 
 | Shortcut      | Replacement   | Description
 | :------------ | :-------------| :-----------------------------------------
 | `\ `          | `&nbsp;`      | A backslash before a space: Non-Breaking Space
 | `\&`          | `&amp;`       | Ampersand (&)
-| `\\<`         | `\&lt;`       | \&gt;
 | `\<`          | `&lt;`        | Less Than (<)
-| `\\>`         | `\&gt;`       | \&gt;
 | `\>`          | `&gt;`        | Greater Than (>)
 
 
 # Known Issues
 
-* Text wrapping is a purely cosmetic feature that has no practical use. It is disabled whenever embedded JavaScript code is detected (or when you have added the `<<nowrap>>` marker macro). You should note that certain constructs (like very long URLs) can never be wrapped without breaking the functionality of the page. Therefore, the resulting lines may well exceed the limit that you have specified for the "textwidth".
+* The handling of `&` (changed to `&amp;`) and `\&` (changed to `&`) has changed in version 4.1. You may need to adjust the URLs in your sources from the form: "host/?a=0&b=0" to "host/?a=0\&b=0", i.e. with the backslash that will be removed.
 
-* The conversion of non-ASCII characters is incomplete. Feel free to submit additional character conversions.
+* Text wrapping is a purely cosmetic feature that has no practical use. It is disabled whenever embedded JavaScript code is detected (or when you have added the `<<nowrap>>` marker macro). You should note that certain constructs (like very long URLs) can never be wrapped without breaking the functionality of the page. Therefore, the resulting lines may well exceed the limit that you have specified for the "textwidth".
 
 * Input files need to be UTF-8 encoded to be able to correctly detect any non-ASCII characters.
 
