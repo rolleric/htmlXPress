@@ -16,10 +16,22 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-my $version = "4.0";
+my $version = "4.3";
 
 # Version History
 # ===============
+# 2018-06-23  4.3
+#    Added an alternative marker style: <:nowrap:> ($hxpr_start, $hxpr_end).
+#    This is to avoid error markers in vim's syntax highlighting.
+#
+# 2016-03-12  4.2
+#    User can supply an output file name with -out option.
+#
+# 2015-07-25  4.1
+#    Changed the HTML entity encoding to an approach suggested
+#    by Html::Entities (3.69).
+#    Declared file encoding to be UTF-8.
+#
 # 2015-03-25  4.0
 #    Repackaging for wider distribution.
 #    Site file is now optional if ($site_package_name ne "").
@@ -49,13 +61,15 @@ my $version = "4.0";
 #
 
 use strict;
-no strict qw(refs);
-
+ no strict qw(refs);
+use diagnostics;
+use open ':encoding(utf8)';
 use File::Basename;         # basename, dirname
 use File::Spec::Functions;  # catdir, catfile, curdir
 use Getopt::Long;           # GetOptions
 use Pod::Usage;             # pod2usage
 use Text::Wrap;             # wrap
+use Unicode::Normalize;     # NFC
 
 
 # =========================================================================
@@ -69,7 +83,17 @@ use Text::Wrap;             # wrap
 #
 #       # Path to the SetFile executable.
 #       $set_file_exec = "/Developer/Tools/SetFile";
-# 
+#
+
+
+# -------------------------------------------------------------------------
+# hxpr_start hxpr_end
+#
+# The HTML-like markers that are used to delimit custom macros.
+# Example: <<nowrap>> or <:nowrap:>.
+
+my $hxpr_start = "(?:<<|<:)";
+my $hxpr_end   = "(?:>>|:>)";
 
 
 # -------------------------------------------------------------------------
@@ -157,7 +181,7 @@ our %file_table = (
         info => "Cascading Style Sheet",
         compress => 1,
     },
-    
+
     # HTML, compress, wrap lines to 80 characters.
     html => {
         info => "Hypert-text markup langage",
@@ -169,12 +193,12 @@ our %file_table = (
     # As above for HTML.
     htm => { copy_from => "html" },
     xml => { copy_from => "html" },
-    
+
     php => {
         info => "PHP: Hypertext Preprocessor",
         copy_from => "html",
     },
-    
+
     rss => {
         info => "Really Simple Syndication",
         copy_from => "html",
@@ -294,8 +318,8 @@ if ($site_package_name ne "") {
 
     # Activate site-specific settings.
     foreach my $varname ( "add_banner", "curl_exec", "date_format",
-                "default_creator", "destination", "set_file_exec",
-                "site_package_name", "xml_lint_command" ) {
+                "default_creator", "destination", "hxpr_start", "hxpr_end",
+		"set_file_exec", "site_package_name", "xml_lint_command" ) {
         $$varname = ${"${site_package_name}::$varname"}
                 if (defined(${"${site_package_name}::$varname"}));
     }
@@ -338,6 +362,7 @@ my $overwrite = 0;  # Allow overwriting the input file
 my $help = 0;       # Whether to show the help page
 my $lint = 1;       # Whether to do linting (XML only)
 my $outdir;         # Output directory, set to "undef".
+my $outfile;
 my $verbose = 0;    # Verbose mode
 
 GetOptions( 'banner!'           => \$add_banner,
@@ -359,7 +384,10 @@ $verbose = 1 if $debug;
 
 unless ($overwrite) {
     $outdir = $destination unless defined($outdir);
-    die "Output directory not found: '$outdir', stopped" unless (-d "$outdir");
+    unless (-d "$outdir") {
+	$outfile = basename("$outdir");
+	$outdir  = dirname("$outdir");
+    }
 }
 
 print "$prog, starting on $longdate\n" if $verbose;
@@ -367,11 +395,12 @@ print "$prog, starting on $longdate\n" if $verbose;
 if ($debug) {
     my $exec_path = (split /\s+/, $xml_lint_command)[0];
     print STDERR "Error: No executable at \$xml_lint_command: $xml_lint_command\n" if (! -x $exec_path);
-    
+
     # Debug settings
     print "Variables:\n";
     foreach my $varname ( "add_banner", "curl_exec", "date_format",
-                "default_creator", "destination", "set_file_exec",
+                "default_creator", "destination", "hxpr_start",
+		"hxpr_end", "set_file_exec",
                 "site_package_name", "xml_lint_command" ) {
         print "\t\$$varname = \"$$varname\";\n";
     }
@@ -389,7 +418,7 @@ if ($site_package_name ne "")
 {
     # Site-specific file_table entries take precedence.
     # New settings are appended.
-    
+
     if (%{"${site_package_name}::file_table"})
     {
         print "- Importing site-specific data\n" if $verbose;
@@ -425,12 +454,12 @@ do
     foreach my $type ( keys(%file_table) )
     {
         next if $type eq "default";
-        
+
         # If no "copy_from" entry is defined, use "copy_from" => "default"
         unless (defined($file_table{$type}{"copy_from"})) {
             $file_table{$type}{"copy_from"} = "default";
         }
-            
+
         # Get the master
         my $from = $file_table{$type}{"copy_from"};
 
@@ -452,13 +481,13 @@ do
                         if $debug;
                 }
             }
-            
+
             # Mark this file type as expanded.
             # Other file types are now allowed to copy its values.
             $file_table{$type}{"copy_from"} = "default";
-                
+
         } else {
-            
+
             # The master type has not inherited the settings from
             # the default type yet - postpone this for one iteration.
             $done = 0;
@@ -486,6 +515,323 @@ if ($debug) {
 }
 
 
+# -------------------------------------------------------------------------
+# Html entity encodings.
+# -------------------------------------------------------------------------
+# Follows the example of the Html::Encode module on CPAN:
+# http://search.cpan.org/dist/HTML-Parser/lib/HTML/Entities.pm
+
+our %char2entity = (
+    # Some normal chars that have special meaning in SGML context
+    '&'		=> 'amp',	# AMPERSAND
+    '>'		=> 'gt',  	# GREATER-THAN SIGN
+    '<'		=> 'lt',  	# LESS-THAN SIGN
+    '"'		=> 'quot',	# QUOTATION MARK
+    "'"		=> 'apos',	# APOSTROPHE
+
+    # PUBLIC ISO 8879-1986//ENTITIES Added Latin 1//EN//HTML
+    chr(192)	=> 'Agrave',  	# LATIN CAPITAL LETTER A WITH GRAVE
+    chr(193)	=> 'Aacute',  	# LATIN CAPITAL LETTER A WITH ACUTE
+    chr(194)	=> 'Acirc',  	# LATIN CAPITAL LETTER A WITH CIRCUMFLEX
+    chr(195)	=> 'Atilde',  	# LATIN CAPITAL LETTER A WITH TILDE
+    chr(196)	=> 'Auml',  	# LATIN CAPITAL LETTER A WITH DIAERESIS
+    chr(197)	=> 'Aring',  	# LATIN CAPITAL LETTER A WITH RING ABOVE
+    chr(198)	=> 'AElig',  	# LATIN CAPITAL LETTER AE
+    chr(199)	=> 'Ccedil',  	# LATIN CAPITAL LETTER C WITH CEDILLA
+    chr(200)	=> 'Egrave',  	# LATIN CAPITAL LETTER E WITH GRAVE
+    chr(201)	=> 'Eacute',  	# LATIN CAPITAL LETTER E WITH ACUTE
+    chr(202)	=> 'Ecirc',  	# LATIN CAPITAL LETTER E WITH CIRCUMFLEX
+    chr(203)	=> 'Euml',  	# LATIN CAPITAL LETTER E WITH DIAERESIS
+    chr(204)	=> 'Igrave',  	# LATIN CAPITAL LETTER I WITH GRAVE
+    chr(205)	=> 'Iacute',  	# LATIN CAPITAL LETTER I WITH ACUTE
+    chr(206)	=> 'Icirc',  	# LATIN CAPITAL LETTER I WITH CIRCUMFLEX
+    chr(207)	=> 'Iuml',  	# LATIN CAPITAL LETTER I WITH DIAERESIS
+    chr(208)	=> 'ETH',  	# LATIN CAPITAL LETTER ETH
+    chr(209)	=> 'Ntilde',  	# LATIN CAPITAL LETTER N WITH TILDE
+    chr(210)	=> 'Ograve',  	# LATIN CAPITAL LETTER O WITH GRAVE
+    chr(211)	=> 'Oacute',  	# LATIN CAPITAL LETTER O WITH ACUTE
+    chr(212)	=> 'Ocirc',  	# LATIN CAPITAL LETTER O WITH CIRCUMFLEX
+    chr(213)	=> 'Otilde',  	# LATIN CAPITAL LETTER O WITH TILDE
+    chr(214)	=> 'Ouml',  	# LATIN CAPITAL LETTER O WITH DIAERESIS
+    chr(216)	=> 'Oslash',  	# LATIN CAPITAL LETTER O WITH STROKE
+    chr(217)	=> 'Ugrave',  	# LATIN CAPITAL LETTER U WITH GRAVE
+    chr(218)	=> 'Uacute',  	# LATIN CAPITAL LETTER U WITH ACUTE
+    chr(219)	=> 'Ucirc',  	# LATIN CAPITAL LETTER U WITH CIRCUMFLEX
+    chr(220)	=> 'Uuml',  	# LATIN CAPITAL LETTER U WITH DIAERESIS
+    chr(221)	=> 'Yacute',  	# LATIN CAPITAL LETTER Y WITH ACUTE
+    chr(222)	=> 'THORN',  	# LATIN CAPITAL LETTER THORN
+    chr(223)	=> 'szlig',  	# LATIN SMALL LETTER SHARP S
+    chr(224)	=> 'agrave',  	# LATIN SMALL LETTER A WITH GRAVE
+    chr(225)	=> 'aacute',  	# LATIN SMALL LETTER A WITH ACUTE
+    chr(226)	=> 'acirc',  	# LATIN SMALL LETTER A WITH CIRCUMFLEX
+    chr(227)	=> 'atilde',  	# LATIN SMALL LETTER A WITH TILDE
+    chr(228)	=> 'auml',  	# LATIN SMALL LETTER A WITH DIAERESIS
+    chr(229)	=> 'aring',  	# LATIN SMALL LETTER A WITH RING ABOVE
+    chr(230)	=> 'aelig',  	# LATIN SMALL LETTER AE
+    chr(231)	=> 'ccedil',  	# LATIN SMALL LETTER C WITH CEDILLA
+    chr(232)	=> 'egrave',  	# LATIN SMALL LETTER E WITH GRAVE
+    chr(233)	=> 'eacute',  	# LATIN SMALL LETTER E WITH ACUTE
+    chr(234)	=> 'ecirc',  	# LATIN SMALL LETTER E WITH CIRCUMFLEX
+    chr(235)	=> 'euml',  	# LATIN SMALL LETTER E WITH DIAERESIS
+    chr(236)	=> 'igrave',  	# LATIN SMALL LETTER I WITH GRAVE
+    chr(237)	=> 'iacute',  	# LATIN SMALL LETTER I WITH ACUTE
+    chr(238)	=> 'icirc',  	# LATIN SMALL LETTER I WITH CIRCUMFLEX
+    chr(239)	=> 'iuml',  	# LATIN SMALL LETTER I WITH DIAERESIS
+    chr(240)	=> 'eth',  	# LATIN SMALL LETTER ETH
+    chr(241)	=> 'ntilde',  	# LATIN SMALL LETTER N WITH TILDE
+    chr(242)	=> 'ograve',  	# LATIN SMALL LETTER O WITH GRAVE
+    chr(243)	=> 'oacute',  	# LATIN SMALL LETTER O WITH ACUTE
+    chr(244)	=> 'ocirc',  	# LATIN SMALL LETTER O WITH CIRCUMFLEX
+    chr(245)	=> 'otilde',  	# LATIN SMALL LETTER O WITH TILDE
+    chr(246)	=> 'ouml',  	# LATIN SMALL LETTER O WITH DIAERESIS
+    chr(248)	=> 'oslash',  	# LATIN SMALL LETTER O WITH STROKE
+    chr(249)	=> 'ugrave',  	# LATIN SMALL LETTER U WITH GRAVE
+    chr(250)	=> 'uacute',  	# LATIN SMALL LETTER U WITH ACUTE
+    chr(251)	=> 'ucirc',  	# LATIN SMALL LETTER U WITH CIRCUMFLEX
+    chr(252)	=> 'uuml',  	# LATIN SMALL LETTER U WITH DIAERESIS
+    chr(253)	=> 'yacute',  	# LATIN SMALL LETTER Y WITH ACUTE
+    chr(254)	=> 'thorn',  	# LATIN SMALL LETTER THORN
+    chr(255)	=> 'yuml',  	# LATIN SMALL LETTER Y WITH DIAERESIS
+
+    # Some extra Latin 1 chars that are listed in the HTML3.2 draft (21-May-96)
+    chr(160)	=> 'nbsp',  	# NO-BREAK SPACE
+    chr(169)	=> 'copy',  	# COPYRIGHT SIGN
+    chr(174)	=> 'reg',  	# REGISTERED SIGN
+
+    # Additional ISO-8859/1 entities listed in rfc1866 (section 14)
+    chr(161)	=> 'iexcl',	# INVERTED EXCLAMATION MARK
+    chr(162)	=> 'cent',	# CENT SIGN
+    chr(163)	=> 'pound',	# POUND SIGN
+    chr(164)	=> 'curren',	# CURRENCY SIGN
+    chr(165)	=> 'yen',	# YEN SIGN
+    chr(166)	=> 'brvbar',	# BROKEN BAR
+    chr(167)	=> 'sect',	# SECTION SIGN
+    chr(168)	=> 'uml',	# DIAERESIS
+    chr(170)	=> 'ordf',	# FEMININE ORDINAL INDICATOR
+    chr(171)	=> 'laquo',	# LEFT-POINTING DOUBLE ANGLE QUOTATION MARK
+    chr(172)	=> 'not',	# NOT SIGN
+    chr(173)	=> 'shy',	# SOFT HYPHEN
+    chr(175)	=> 'macr',	# MACRON
+    chr(176)	=> 'deg',	# DEGREE SIGN
+    chr(177)	=> 'plusmn',	# PLUS-MINUS SIGN
+    chr(178)	=> 'sup2',	# SUPERSCRIPT TWO
+    chr(179)	=> 'sup3',	# SUPERSCRIPT THREE
+    chr(180)	=> 'acute',	# ACUTE ACCENT
+    chr(181)	=> 'micro',	# MICRO SIGN
+    chr(182)	=> 'para',	# PILCROW SIGN
+    chr(183)	=> 'middot',	# MIDDLE DOT
+    chr(184)	=> 'cedil',	# CEDILLA
+    chr(185)	=> 'sup1',	# SUPERSCRIPT ONE
+    chr(186)	=> 'ordm',	# MASCULINE ORDINAL INDICATOR
+    chr(187)	=> 'raquo',	# RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
+    chr(188)	=> 'frac14',	# VULGAR FRACTION ONE QUARTER
+    chr(189)	=> 'frac12',	# VULGAR FRACTION ONE HALF
+    chr(190)	=> 'frac34',	# VULGAR FRACTION THREE QUARTERS
+    chr(191)	=> 'iquest',	# INVERTED QUESTION MARK
+    chr(215)	=> 'times',	# MULTIPLICATION SIGN
+    chr(247)	=> 'divide',	# DIVISION SIGN
+
+    chr(338)	=> 'OElig',	# LATIN CAPITAL LIGATURE OE
+    chr(339)	=> 'oelig',	# LATIN SMALL LIGATURE OE
+    chr(352)	=> 'Scaron',	# LATIN CAPITAL LETTER S WITH CARON
+    chr(353)	=> 'scaron',	# LATIN SMALL LETTER S WITH CARON
+    chr(376)	=> 'Yuml',	# LATIN CAPITAL LETTER Y WITH DIAERESIS
+    chr(402)	=> 'fnof',	# LATIN SMALL LETTER F WITH HOOK
+    chr(710)	=> 'circ',	# MODIFIER LETTER CIRCUMFLEX ACCENT
+    chr(732)	=> 'tilde',	# SMALL TILDE
+    chr(913)	=> 'Alpha',	# GREEK CAPITAL LETTER ALPHA
+    chr(914)	=> 'Beta',	# GREEK CAPITAL LETTER BETA
+    chr(915)	=> 'Gamma',	# GREEK CAPITAL LETTER GAMMA
+    chr(916)	=> 'Delta',	# GREEK CAPITAL LETTER DELTA
+    chr(917)	=> 'Epsilon',	# GREEK CAPITAL LETTER EPSILON
+    chr(918)	=> 'Zeta',	# GREEK CAPITAL LETTER ZETA
+    chr(919)	=> 'Eta',	# GREEK CAPITAL LETTER ETA
+    chr(920)	=> 'Theta',	# GREEK CAPITAL LETTER THETA
+    chr(921)	=> 'Iota',	# GREEK CAPITAL LETTER IOTA
+    chr(922)	=> 'Kappa',	# GREEK CAPITAL LETTER KAPPA
+    chr(923)	=> 'Lambda',	# GREEK CAPITAL LETTER LAMDA
+    chr(924)	=> 'Mu',	# GREEK CAPITAL LETTER MU
+    chr(925)	=> 'Nu',	# GREEK CAPITAL LETTER NU
+    chr(926)	=> 'Xi',	# GREEK CAPITAL LETTER XI
+    chr(927)	=> 'Omicron',	# GREEK CAPITAL LETTER OMICRON
+    chr(928)	=> 'Pi',	# GREEK CAPITAL LETTER PI
+    chr(929)	=> 'Rho',	# GREEK CAPITAL LETTER RHO
+    chr(931)	=> 'Sigma',	# GREEK CAPITAL LETTER SIGMA
+    chr(932)	=> 'Tau',	# GREEK CAPITAL LETTER TAU
+    chr(933)	=> 'Upsilon',	# GREEK CAPITAL LETTER UPSILON
+    chr(934)	=> 'Phi',	# GREEK CAPITAL LETTER PHI
+    chr(935)	=> 'Chi',	# GREEK CAPITAL LETTER CHI
+    chr(936)	=> 'Psi',	# GREEK CAPITAL LETTER PSI
+    chr(937)	=> 'Omega',	# GREEK CAPITAL LETTER OMEGA
+    chr(945)	=> 'alpha',	# GREEK SMALL LETTER ALPHA
+    chr(946)	=> 'beta',	# GREEK SMALL LETTER BETA
+    chr(947)	=> 'gamma',	# GREEK SMALL LETTER GAMMA
+    chr(948)	=> 'delta',	# GREEK SMALL LETTER DELTA
+    chr(949)	=> 'epsilon',	# GREEK SMALL LETTER EPSILON
+    chr(950)	=> 'zeta',	# GREEK SMALL LETTER ZETA
+    chr(951)	=> 'eta',	# GREEK SMALL LETTER ETA
+    chr(952)	=> 'theta',	# GREEK SMALL LETTER THETA
+    chr(953)	=> 'iota',	# GREEK SMALL LETTER IOTA
+    chr(954)	=> 'kappa',	# GREEK SMALL LETTER KAPPA
+    chr(955)	=> 'lambda',	# GREEK SMALL LETTER LAMDA
+    chr(956)	=> 'mu',	# GREEK SMALL LETTER MU
+    chr(957)	=> 'nu',	# GREEK SMALL LETTER NU
+    chr(958)	=> 'xi',	# GREEK SMALL LETTER XI
+    chr(959)	=> 'omicron',	# GREEK SMALL LETTER OMICRON
+    chr(960)	=> 'pi',	# GREEK SMALL LETTER PI
+    chr(961)	=> 'rho',	# GREEK SMALL LETTER RHO
+    chr(962)	=> 'sigmaf',	# GREEK SMALL LETTER FINAL SIGMA
+    chr(963)	=> 'sigma',	# GREEK SMALL LETTER SIGMA
+    chr(964)	=> 'tau',	# GREEK SMALL LETTER TAU
+    chr(965)	=> 'upsilon',	# GREEK SMALL LETTER UPSILON
+    chr(966)	=> 'phi',	# GREEK SMALL LETTER PHI
+    chr(967)	=> 'chi',	# GREEK SMALL LETTER CHI
+    chr(968)	=> 'psi',	# GREEK SMALL LETTER PSI
+    chr(969)	=> 'omega',	# GREEK SMALL LETTER OMEGA
+    chr(977)	=> 'thetasym',	# GREEK THETA SYMBOL
+    chr(978)	=> 'upsih',	# GREEK UPSILON WITH HOOK SYMBOL
+    chr(982)	=> 'piv',	# GREEK PI SYMBOL
+    chr(8194)	=> 'ensp',	# EN SPACE
+    chr(8195)	=> 'emsp',	# EM SPACE
+    chr(8201)	=> 'thinsp',	# THIN SPACE
+    chr(8204)	=> 'zwnj',	# ZERO WIDTH NON-JOINER
+    chr(8205)	=> 'zwj',	# ZERO WIDTH JOINER
+    chr(8206)	=> 'lrm',	# LEFT-TO-RIGHT MARK
+    chr(8207)	=> 'rlm',	# RIGHT-TO-LEFT MARK
+    chr(8211)	=> 'ndash',	# EN DASH
+    chr(8212)	=> 'mdash',	# EM DASH
+    chr(8216)	=> 'lsquo',	# LEFT SINGLE QUOTATION MARK
+    chr(8217)	=> 'rsquo',	# RIGHT SINGLE QUOTATION MARK
+    chr(8218)	=> 'sbquo',	# SINGLE LOW-9 QUOTATION MARK
+    chr(8220)	=> 'ldquo',	# LEFT DOUBLE QUOTATION MARK
+    chr(8221)	=> 'rdquo',	# RIGHT DOUBLE QUOTATION MARK
+    chr(8222)	=> 'bdquo',	# DOUBLE LOW-9 QUOTATION MARK
+    chr(8224)	=> 'dagger',	# DAGGER
+    chr(8225)	=> 'Dagger',	# DOUBLE DAGGER
+    chr(8226)	=> 'bull',	# BULLET
+    chr(8230)	=> 'hellip',	# HORIZONTAL ELLIPSIS
+    chr(8240)	=> 'permil',	# PER MILLE SIGN
+    chr(8242)	=> 'prime',	# PRIME
+    chr(8243)	=> 'Prime',	# DOUBLE PRIME
+    chr(8249)	=> 'lsaquo',	# SINGLE LEFT-POINTING ANGLE QUOTATION MARK
+    chr(8250)	=> 'rsaquo',	# SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
+    chr(8254)	=> 'oline',	# OVERLINE
+    chr(8260)	=> 'frasl',	# FRACTION SLASH
+    chr(8364)	=> 'euro',	# EURO SIGN
+    chr(8465)	=> 'image',	# BLACK-LETTER CAPITAL I
+    chr(8472)	=> 'weierp',	# WEIERSTRASS ELLIPTIC FUNCTION
+    chr(8476)	=> 'real',	# BLACK-LETTER CAPITAL R
+    chr(8482)	=> 'trade',	# TRADE MARK SIGN
+    chr(8501)	=> 'alefsym',	# ALEF SYMBOL
+    chr(8592)	=> 'larr',	# LEFTWARDS ARROW
+    chr(8593)	=> 'uarr',	# UPWARDS ARROW
+    chr(8594)	=> 'rarr',	# RIGHTWARDS ARROW
+    chr(8595)	=> 'darr',	# DOWNWARDS ARROW
+    chr(8596)	=> 'harr',	# LEFT RIGHT ARROW
+    chr(8629)	=> 'crarr',	# DOWNWARDS ARROW WITH CORNER LEFTWARDS
+    chr(8656)	=> 'lArr',	# LEFTWARDS DOUBLE ARROW
+    chr(8657)	=> 'uArr',	# UPWARDS DOUBLE ARROW
+    chr(8658)	=> 'rArr',	# RIGHTWARDS DOUBLE ARROW
+    chr(8659)	=> 'dArr',	# DOWNWARDS DOUBLE ARROW
+    chr(8660)	=> 'hArr',	# LEFT RIGHT DOUBLE ARROW
+    chr(8704)	=> 'forall',	# FOR ALL
+    chr(8706)	=> 'part',	# PARTIAL DIFFERENTIAL
+    chr(8707)	=> 'exist',	# THERE EXISTS
+    chr(8709)	=> 'empty',	# EMPTY SET
+    chr(8711)	=> 'nabla',	# NABLA
+    chr(8712)	=> 'isin',	# ELEMENT OF
+    chr(8713)	=> 'notin',	# NOT AN ELEMENT OF
+    chr(8715)	=> 'ni',	# CONTAINS AS MEMBER
+    chr(8719)	=> 'prod',	# N-ARY PRODUCT
+    chr(8721)	=> 'sum',	# N-ARY SUMMATION
+    chr(8722)	=> 'minus',	# MINUS SIGN
+    chr(8727)	=> 'lowast',	# ASTERISK OPERATOR
+    chr(8730)	=> 'radic',	# SQUARE ROOT
+    chr(8733)	=> 'prop',	# PROPORTIONAL TO
+    chr(8734)	=> 'infin',	# INFINITY
+    chr(8736)	=> 'ang',	# ANGLE
+    chr(8743)	=> 'and',	# LOGICAL AND
+    chr(8744)	=> 'or',	# LOGICAL OR
+    chr(8745)	=> 'cap',	# INTERSECTION
+    chr(8746)	=> 'cup',	# UNION
+    chr(8747)	=> 'int',	# INTEGRAL
+    chr(8756)	=> 'there4',	# THEREFORE
+    chr(8764)	=> 'sim',	# TILDE OPERATOR
+    chr(8773)	=> 'cong',	# APPROXIMATELY EQUAL TO
+    chr(8776)	=> 'asymp',	# ALMOST EQUAL TO
+    chr(8800)	=> 'ne',	# NOT EQUAL TO
+    chr(8801)	=> 'equiv',	# IDENTICAL TO
+    chr(8804)	=> 'le',	# LESS-THAN OR EQUAL TO
+    chr(8805)	=> 'ge',	# GREATER-THAN OR EQUAL TO
+    chr(8834)	=> 'sub',	# SUBSET OF
+    chr(8835)	=> 'sup',	# SUPERSET OF
+    chr(8836)	=> 'nsub',	# NOT A SUBSET OF
+    chr(8838)	=> 'sube',	# SUBSET OF OR EQUAL TO
+    chr(8839)	=> 'supe',	# SUPERSET OF OR EQUAL TO
+    chr(8853)	=> 'oplus',	# CIRCLED PLUS
+    chr(8855)	=> 'otimes',	# CIRCLED TIMES
+    chr(8869)	=> 'perp',	# UP TACK
+    chr(8901)	=> 'sdot',	# DOT OPERATOR
+    chr(8968)	=> 'lceil',	# LEFT CEILING
+    chr(8969)	=> 'rceil',	# RIGHT CEILING
+    chr(8970)	=> 'lfloor',	# LEFT FLOOR
+    chr(8971)	=> 'rfloor',	# RIGHT FLOOR
+    chr(9001)	=> 'lang',	# LEFT-POINTING ANGLE BRACKET
+    chr(9002)	=> 'rang',	# RIGHT-POINTING ANGLE BRACKET
+    chr(9674)	=> 'loz',	# LOZENGE
+    chr(9824)	=> 'spades',	# BLACK SPADE SUIT
+    chr(9827)	=> 'clubs',	# BLACK CLUB SUIT
+    chr(9829)	=> 'hearts',	# BLACK HEART SUIT
+    chr(9830)	=> 'diams',	# BLACK DIAMOND SUIT
+);
+
+# Fill in missing entities
+for (0 .. 255) {
+    next if exists $char2entity{chr($_)};
+    $char2entity{chr($_)} = "#$_";
+}
+
+# Wrap all in '&' and ';'.
+foreach my $c ( keys(%char2entity) ) {
+    $char2entity{$c} = "&" . $char2entity{$c} . ";";
+}
+
+sub encode_entities
+{
+    return undef unless defined $_[0];
+    my $ref;
+    if (defined wantarray) {
+	my $x = $_[0];
+	$ref = \$x;     # copy
+    } else {
+	$ref = \$_[0];  # modify in-place
+    }
+
+    # "\ " -> chr(160) (-> "&nbsp;")
+    $$ref =~ s/\\ /chr(160)/ge;
+
+    # \& \< \> -> &amp; &lt; &gt;
+    $$ref =~ s/\\([<&>])/$char2entity{$1} || num_entity($1)/ge;
+
+    # Encode control chars, high bit chars.
+    $$ref =~ s/([^\n\r\t !\#\$&%\(-;<=>?-~'"])/$char2entity{$1} || num_entity($1)/ge;
+
+    # Special case: " & ", ampersand surrounded by whitespace -> " &amp; "
+    $$ref =~ s/\s+(&)\s+/" " . ($char2entity{$1} || num_entity($1)) . " "/ge;
+
+    $$ref;
+}
+
+sub num_entity {
+    sprintf "&#x%X;", ord($_[0]);
+}
+
+sub encode_entities_numeric {
+    local %char2entity;
+    return &encode_entities;
+}
+
+
 
 # =========================================================================
 # Main Loop
@@ -497,8 +843,8 @@ FILE : foreach my $file ( @ARGV )
     # Read the file and determine its file type
 
     print "< $file\n" if $verbose;
-    open(IN, $file) or die "Cannot open '$file': $!, stopped";
-    
+    open(my $IN, '<', $file) or die "Cannot open '$file': $!, stopped";
+
     my $filename = basename($file, "");
     my $type = "default";       # not yet known whether this is a special file.
     $outdir = dirname($file) if $overwrite;
@@ -512,18 +858,23 @@ FILE : foreach my $file ( @ARGV )
                 print STDERR "Error: Undefined file type: $type ($filename)\n";
                 $type = "default";
             }
-            
+
             if (defined($file_table{$type}{"out"}) && !$overwrite) {
                 # Through the file table entry "out", a new filename
                 # extension can be specified, e.g. test.xrc => test.html
                 $filename = $` . "." . $file_table{$type}{"out"};
             }
         }
-        
+    }
+
+    if (defined($outfile)) {
+	# The use gave us a specific file name.
+        $file = catfile( $outdir, $outfile );
+    } elsif ($file ne "-") {
         # the result file is to be stored in a different directory.
         $file = catfile( $outdir, $filename ) unless $overwrite;
     }
-    
+
     my $xmlver = "1.0";  # default XML version is 1.0
     my $out = "";        # the resulting text
     my $wrap = $file_table{$type}{"textwidth"};
@@ -540,10 +891,10 @@ FILE : foreach my $file ( @ARGV )
     # ---------------------------------------------------------------------
     # File Processing
 
-    LINE : while (<IN>)
+    LINE : while (<$IN>)
     {
         next LINE unless $_;
-        
+
         # -----------------------------------------------------------------
         # pre-process
 
@@ -551,6 +902,8 @@ FILE : foreach my $file ( @ARGV )
         if (defined(&{"${site_package_name}::pre_process"})) {
             print "- ${site_package_name}::pre_process\n" if $verbose;
             &{"${site_package_name}::pre_process"}($filename, $type);
+        } elsif ($verbose) {
+            print "? ${site_package_name}::pre_process\n";
         }
 
 
@@ -558,7 +911,7 @@ FILE : foreach my $file ( @ARGV )
         # Initial checks
 
         my $i;
-        
+
         # Detect whether it is an XML file.
         if (m/^<\??XML([^\?>]*)\??>/i) {
             $i = $1;
@@ -580,17 +933,19 @@ FILE : foreach my $file ( @ARGV )
         if (defined (&{"${site_package_name}::process"})) {
             print "- ${site_package_name}::process\n" if $verbose;
             &{"${site_package_name}::process"}($filename, $type);
+        } elsif ($verbose) {
+            print "? ${site_package_name}::process\n";
         }
 
 
         # -----------------------------------------------------------------
-        # special keywords
+        # special keywords: <<longdate>> <<date>> <<file>>
 
-        s/<<longdate>>/$longdate/ig;
-        s/<<date>>/$date/ig;
-        s/<<file>>/$filename/ig;
-        
-        $wrap = 0 if s/<<nowrap>>//ig;
+        s/${hxpr_start}longdate${hxpr_end}/$longdate/ig;
+        s/${hxpr_start}date${hxpr_end}/$date/ig;
+        s/${hxpr_start}file${hxpr_end}/$filename/ig;
+
+        $wrap = 0 if s/${hxpr_start}nowrap${hxpr_end}//ig;
 
 
         # -----------------------------------------------------------------
@@ -604,13 +959,13 @@ FILE : foreach my $file ( @ARGV )
             # XHTML, HTML in XML format.
             if ($xmlver eq "1.0") {
                 # XHTML 1.0 declaration
-                if (s|<<doctype\s+(\S+)>>|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 \u$1//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-\L$1\E.dtd">|i)
+                if (s|${hxpr_start}doctype\s+(\S+?)${hxpr_end}|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 \u$1//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-\L$1\E.dtd">|i)
                 { $page = $1; }
             } else {
                 # XHTML 1.1 (or above?) declaration
                 $i = $xmlver;
                 $i =~ s/\.//g;
-                s|<<doctype\s+\S+>>|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML $xmlver//EN" "http://www.w3.org/TR/xhtml$i/DTD/xhtml$i.dtd">|i;
+                s|${hxpr_start}doctype\s+\S+?${hxpr_end}|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML $xmlver//EN" "http://www.w3.org/TR/xhtml$i/DTD/xhtml$i.dtd">|i;
             }
 
             s|<html>|<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">|i;
@@ -623,13 +978,13 @@ FILE : foreach my $file ( @ARGV )
         } else {
 
             # standard HTML 4.01 declaration
-            if (m|<<doctype\s+(\S+)>>|) {
+            if (m|${hxpr_start}doctype\s+(\S+?)${hxpr_end}|) {
                 my $mode = $page = "\L$1\E";
                 $page = "loose"  if ($page eq "transitional");
                 $mode = ""  if ($mode eq "strict");
                 $mode = " \u$mode"  if $mode;
 
-                s|<<doctype\s+(\S+)>>|<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01$mode//EN" "http://www.w3.org/TR/html4/\L$page\E.dtd">|g;
+                s|${hxpr_start}doctype\s+(\S+?)${hxpr_end}|<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01$mode//EN" "http://www.w3.org/TR/html4/\L$page\E.dtd">|g;
             }
         }
 
@@ -641,217 +996,24 @@ FILE : foreach my $file ( @ARGV )
         {
             # Exchange special characters by their HTML code
             # NB. This section is incomplete - only common chars are handled.
-            
+
             print "- Converting umlauts\n" if $verbose;
 
-            s/ä/&auml;/g;
-            s/à/&agrave;/g;
-            s/á/&aacute;/g;
-            s/â/&acirc;/g;
-            s/ã/&atilde;/g;
-            s/å/&aring;/g;
-            s/æ/&aelig;/g;
-            s/ç/&ccedil;/g;
-            s/ë/&euml;/g;
-            s/è/&egrave;/g;
-            s/é/&eacute;/g;
-            s/ê/&ecirc;/g;
-            s/ð/&eth;/g;
-            s/ï/&iuml;/g;
-            s/ì/&igrave;/g;
-            s/í/&iacute;/g;
-            s/î/&icirc;/g;
-            s/ñ/&ntilde;/g;
-            s/ö/&ouml;/g;
-            s/ò/&ograve;/g;
-            s/ó/&oacute;/g;
-            s/ô/&ocirc;/g;
-            s/õ/&otilde;/g;
-            s/ø/&oslash;/g;
-            s/√ü/&szlig;/g;
-            s/þ/&thorn;/g;
-            s/ü/&uuml;/g;
-            s/ù/&ugrave;/g;
-            s/ú/&uacute;/g;
-            s/û/&ucirc;/g;
-            s/ÿ/&yuml;/g;
-            s/ý/&yacute;/g;
+            # Canonical decomposition followed by canonical composition.
+            # This is to combine wide Unicode code sequences where possible.
+            $_ = NFC($_);
 
-            s/Ä/&Auml;/g;
-            s/À/&Agrave;/g;
-            s/Á/&Aacute;/g;
-            s/Â/&Acirc;/g;
-            s/Ã/&Atilde;/g;
-            s/Å/&Aring;/g;
-            s/Æ/&AElig;/g;
-            s/Ç/&Ccedil;/g;
-            s/Ë/&Euml;/g;
-            s/È/&Egrave;/g;
-            s/É/&Eacute;/g;
-            s/Ê/&Ecirc;/g;
-            s/Ð/&ETH;/g;
-            s/Ï/&Iuml;/g;
-            s/Ì/&Igrave;/g;
-            s/Í/&Iacute;/g;
-            s/Î/&Icirc;/g;
-            s/Ñ/&Ntilde;/g;
-            s/Ö/&Ouml;/g;
-            s/Ò/&Ograve;/g;
-            s/Ó/&Oacute;/g;
-            s/Ô/&Ocirc;/g;
-            s/Õ/&Otilde;/g;
-            s/Ø/&Oslash;/g;
-            s/Þ/&THORN;/g;
-            s/Ü/&Uuml;/g;
-            s/Ù/&Ugrave;/g;
-            s/Ú/&Uacute;/g;
-            s/Û/&Ucirc;/g;
-            s/Ÿ/&Yuml;/g;
-            s/Ý/&Yacute;/g;
-
-            s/¡/&iexcl;/g;
-            s/¿/&iqiest;/g;
-            s/€/&euro;/g;
-            s/¢/&cent;/g;
-            s/£/&pound;/g;
-            s/¥/&yen;/g;
-            s/©/&copy;/g;
-            s/®/&reg;/g;
-            s/°/&deg;/g;
-            s/¬/&not;/g;
-            s/¨/&uml;/g;
-            s/´/&acute;/g;
-            s/`/&grave;/g;  
-            s/ª/&ordf;/g;
-            s/º/&ordm;/g;
-            s/±/&plusmn;/g;
-            #//&divide;/g;
-            s/§/&para;/g;
-            s/§/&sect;/g;
-            s/µ/&micro;/g;
-            s/•/&middot;/g;
-            s/¬Ø/&macr;/g;
-            s/¸/&cedil;/g;
-
-            s/\\ /&nbsp;/g;      # \<SPC>
-            s/\\&/&amp;/g;       # \&
-            s/\\\\</\\&lt;/g;    # \\< ->  \&lt;
-            s/\\</&lt;/g;        # \<  ->  &lt;
-            s/\\\\>/\\&gt;/g;    # \\> ->  \&gt;
-            s/\\>/&gt;/g;        # \>  ->  &gt;
-
-            s//&#147;/g;       # opt-[
-            s//&#148;/g;       # opt-shft-[
-            #s/'/&#146;/g;
-            s//&#151;/g;
-            s/…/&#133;/g;
-            
             if ($type eq "xml" || $isxml)
             {
-                # In XML, these name symbols are not automatically defined.
+                # In XML, most name symbols are not automatically defined.
                 # To avoid having to do just that, we insert their number
                 # equivalent instead.
+		&encode_entities_numeric($_);
 
-                # The following list is certainly not complete.
-                # Feel free to submit further symbols.
-                s/&euro;/&#128;/g;
-                s/&nbsp;/&#160;/g;
-                s/&iexcl;/&#161;/g;
-                s/&cent;/&#162;/g;
-                s/&pound;/&#163;/g;
-                s/&curren;/&#164;/g;
-                s/&yen;/&#165;/g;
-                s/&brvbar;/&#166;/g;
-                s/&sect;/&#167;/g;
-                s/&uml;/&#168;/g;
-                s/&copy;/&#169;/g;
-                s/&ordf;/&#170;/g;
-                s/&laquo;/&#171;/g;
-                s/&not;/&#172;/g;
-                s/&shy;/&#173;/g;
-                s/&reg;/&#174;/g;
-                s/&macr;/&#175;/g;
-                s/&deg;/&#176;/g;
-                s/&plusmn;/&#177;/g;
-                s/&sup2;/&#178;/g;
-                s/&sup3;/&#179;/g;
-                s/&acute;/&#180;/g;
-                s/&micro;/&#181;/g;
-                s/&para;/&#182;/g;
-                s/&middot;/&#183;/g;
-                s/&cedil;/&#184;/g;
-                s/&sup1;/&#185;/g;
-                s/&ordm;/&#186;/g;
-                s/&raquo;/&#187;/g;
-                s/&frac14;/&#188;/g;
-                s/&frac12;/&#189;/g;
-                s/&frac34;/&#190;/g;
-                s/&iquest;/&#191;/g;
-                s/&Agrave;/&#192;/g;
-                s/&Aacute;/&#193;/g;
-                s/&Acirc;/&#194;/g;
-                s/&Atilde;/&#195;/g;
-                s/&Auml;/&#196;/g;
-                s/&Aring;/&#197;/g;
-                s/&AElig;/&#198;/g;
-                s/&Ccedil;/&#199;/g;
-                s/&Egrave;/&#200;/g;
-                s/&Eacute;/&#201;/g;
-                s/&Ecirc;/&#202;/g;
-                s/&Euml;/&#203;/g;
-                s/&Igrave;/&#204;/g;
-                s/&Iacute;/&#205;/g;
-                s/&Icirc;/&#206;/g;
-                s/&Iuml;/&#207;/g;
-                s/&ETH;/&#208;/g;
-                s/&Ntilde;/&#209;/g;
-                s/&Ograve;/&#210;/g;
-                s/&Oacute;/&#211;/g;
-                s/&Ocirc;/&#212;/g;
-                s/&Otilde;/&#213;/g;
-                s/&Ouml;/&#214;/g;
-                s/&times;/&#215;/g;
-                s/&Oslash;/&#216;/g;
-                s/&Ugrave;/&#217;/g;
-                s/&Uacute;/&#218;/g;
-                s/&Ucirc;/&#219;/g;
-                s/&Uuml;/&#220;/g;
-                s/&Yacute;/&#221;/g;
-                s/&THORN;/&#222;/g;
-                s/&szlig;/&#223;/g;
-                s/&agrave;/&#224;/g;
-                s/&aacute;/&#225;/g;
-                s/&acirc;/&#226;/g;
-                s/&atilde;/&#227;/g;
-                s/&auml;/&#228;/g;
-                s/&aring;/&#229;/g;
-                s/&aelig;/&#230;/g;
-                s/&ccedil;/&#231;/g;
-                s/&egrave;/&#232;/g;
-                s/&eacute;/&#233;/g;
-                s/&ecirc;/&#234;/g;
-                s/&euml;/&#235;/g;
-                s/&igrave;/&#236;/g;
-                s/&iacute;/&#237;/g;
-                s/&icirc;/&#238;/g;
-                s/&iuml;/&#239;/g;
-                s/&eth;/&#240;/g;
-                s/&ntilde;/&#241;/g;
-                s/&ograve;/&#242;/g;
-                s/&oacute;/&#243;/g;
-                s/&ocirc;/&#244;/g;
-                s/&otilde;/&#245;/g;
-                s/&ouml;/&#246;/g;
-                s/&divide;/&#247;/g;
-                s/&oslash;/&#248;/g;
-                s/&ugrave;/&#249;/g;
-                s/&uacute;/&#250;/g;
-                s/&ucirc;/&#251;/g;
-                s/&uuml;/&#252;/g;
-                s/&yacute;/&#253;/g;
-                s/&thorn;/&#254;/g;
-                s/&yuml;/&#255;/g;
-            }
+	    } else {
+
+		&encode_entities($_);
+	    }
         }
 
 
@@ -871,7 +1033,7 @@ FILE : foreach my $file ( @ARGV )
         if ($type eq "css" || $type eq "php" || m|<\?php|) {
             # // comments
             while (s!(?:^|\s+)//.*?\n!\n!g) { };  # comments after ' //'
-            
+
             # /* comments */
             while (m!(?:^|\s+)/\*!)
             {
@@ -879,7 +1041,7 @@ FILE : foreach my $file ( @ARGV )
                 s|(/\*.*?)\n|$1|;      # otherwise concat lines
             }
         }
-        
+
         if ($type ne "css") {
             # despite /g this needs to be run several times:
             while (s/(?:^|\s+)#.*?\n/\n/g) { };      # comments after ' #'
@@ -892,7 +1054,7 @@ FILE : foreach my $file ( @ARGV )
             s|(//\s*)-->\s*(</script>)|$1==>$2|ig;      # ==>   ->  ==>
             $wrap = 0;
         }
-        
+
         # Mask server-side include (SSI) comments from being removed
         # They must conform to the style: <!--\#cmd key="code" --> .
         s/<!--(#(?:set)\s+\S+=\"\S+\"\s+\S+=\"\S+\")\s+-->/<!==$1 ==>/g;
@@ -937,13 +1099,13 @@ FILE : foreach my $file ( @ARGV )
         {
             # We remove pretty much all whitespace caracters except in
             # <pre> sections.
-            
+
             print "- Whitespace removal\n" if $verbose;
 
             while (m|<pre>.*?\s.*?</pre>|s) {
-                s|(<pre>\S*?) (.*</pre>)|$1<<s>>$2|sg;  # protect spaces
-                s|(<pre>\S*?)\t(.*</pre>)|$1<<t>>$2|sg; # protect tabs
-                s|(<pre>\S*?)\n(.*</pre>)|$1<<n>>$2|sg; # protect newlines
+                s|(<pre>\S*?) (.*</pre>)|$1<:s:>$2|sg;  # protect spaces
+                s|(<pre>\S*?)\t(.*</pre>)|$1<:t:>$2|sg; # protect tabs
+                s|(<pre>\S*?)\n(.*</pre>)|$1<:n:>$2|sg; # protect newlines
                 $wrap = 0;
             }
 
@@ -1004,19 +1166,19 @@ FILE : foreach my $file ( @ARGV )
         {
             # We only wrap lines in the absence of JavaScripts as it has
             # proven to corrupt the scripts.
-            
+
             print "- Wrapping: $wrap\n" if $verbose;
 
             # Set the column width (defaults to 76).
             $Text::Wrap::columns = $wrap;
-            
+
             # Allow overflow when a line cannot be broken.
             # Otherwise "wrap" may die on us.
             $Text::Wrap::huge    = "overflow";
 
             # Add suggested break points: in between <html><tags>.
             s|><|> <|g;
-        
+
             $_ = wrap("","",$_);
 
             # Remove unused break points.
@@ -1033,12 +1195,17 @@ FILE : foreach my $file ( @ARGV )
 
         if ($file_table{$type}{"compress"} > 0) {
             # restore spaces, tabs, and newlines in <pre>
-            s|<<s>>| |g;   s|<<t>>|\t|g;   s|<<n>>|\n|g;
+            s|<:s:>| |g;   s|<:t:>|\t|g;   s|<:n:>|\n|g;
         }
 
         # check if any undetected macros are left
-        if (m|<<([^>]+)>>|i)  {
-            print STDERR "Error: Token <<$1>> was not recognised.\n";
+	my %tokens;
+        foreach my $macro ( m|(${hxpr_start}.*?${hxpr_end})|i ) {
+	    $tokens{"$macro"} = 1;
+	}
+
+	if (%tokens) {
+            print STDERR "Error: Detected unexpanded tokens: " . join(", ", keys(%tokens)) . ".\n";
         }
 
 
@@ -1071,7 +1238,7 @@ FILE : foreach my $file ( @ARGV )
                             $anchor = ($href =~ s/(\S+)#(\S+)/$1/) ? $2 : "";
                             print STDERR "Warning: Check anchor \"$anchor\" in \"$href\".\n"
                                 if ($anchor && $anchor !~ /^[a-z]{3}\b/);
-    
+
                             print STDERR "Error: Broken link to \"$href\".\n"
                                 unless (-e catfile($outdir, $href));
                         }
@@ -1083,12 +1250,14 @@ FILE : foreach my $file ( @ARGV )
         if (defined (&{"${site_package_name}::post_process"})) {
             print "- ${site_package_name}::post_process\n" if $verbose;
             &{"${site_package_name}::post_process"}($filename, $type);
+        } elsif ($verbose) {
+            print "? ${site_package_name}::post_process\n";
         }
 
         $out .= "$_\n";
     }
 
-    close IN;
+    close $IN;
 
 
     # =====================================================================
@@ -1100,9 +1269,9 @@ FILE : foreach my $file ( @ARGV )
         print " (overwriting)" if -e $file;
         print "\n";
     }
-    open(OUT, ">" . $file ) or die "Cannot open '$file': $!, stopped";
-    print OUT $out;
-    close OUT;
+    open(my $OUT, ">" . $file ) or die "Cannot open '$file': $!, stopped";
+    print $OUT $out;
+    close $OUT;
 
 
     # ---------------------------------------------------------------------
@@ -1167,10 +1336,11 @@ Remember that N<-verbose> will list links.
 
 Runs the resulting file through B<xmllint> (XML only).
 
-=item B<-out> dir_name
+=item B<-out> dir_or_file_name
 
-Writes the resulting files into the dir_name folder. This takes
-preference to the \$destination variable.
+Writes the result to the given file (when a file name is given),
+or to the given directory, with the original (or mapped) file
+name. This takes preference to the \$destination variable.
 
 =item B<-verbose>
 
