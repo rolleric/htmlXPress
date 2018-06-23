@@ -11,7 +11,7 @@
 package site;  # assumes site.pm
 
 use strict;
-use warnings;
+use utf8;
 
 BEGIN {
    # set the version for version checking
