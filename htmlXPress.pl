@@ -21,7 +21,7 @@ my $version = "4.3";
 # Version History
 # ===============
 # 2018-06-23  4.3
-#    Added an alternative marker style: <:nowrap:> ($hxpr_start, $hxpr_end).
+#    Added an alternative marker style: <:nowrap:> ($hxpr_beg, $hxpr_end).
 #    This is to avoid error markers in vim's syntax highlighting.
 #
 # 2016-03-12  4.2
@@ -87,13 +87,13 @@ use Unicode::Normalize;     # NFC
 
 
 # -------------------------------------------------------------------------
-# hxpr_start hxpr_end
+# hxpr_beg hxpr_end
 #
 # The HTML-like markers that are used to delimit custom macros.
 # Example: <<nowrap>> or <:nowrap:>.
 
-my $hxpr_start = "(?:<<|<:)";
-my $hxpr_end   = "(?:>>|:>)";
+our $hxpr_beg = "(?:<<|<:)";
+our $hxpr_end = "(?:>>|:>)";
 
 
 # -------------------------------------------------------------------------
@@ -254,79 +254,6 @@ our $xml_lint_command = "/usr/bin/xmllint -noout";
 
 
 # -------------------------------------------------------------------------
-# Load configuration file
-# -------------------------------------------------------------------------
-# The user may like to change the above variables (as described above).
-
-do "$ENV{HOME}/.htmlxpressrc";
-
-
-# =========================================================================
-# Load the site definitions
-# =========================================================================
-# Site-specific settings are stored in a ".pm" package which is usually
-# located in the same directory as the source files (it is located via "."
-# in @INC when htmlXPress is executed within that directory).
-#
-# It typically defines the pre_process, process, and post_process routines,
-# but it may also define changes to the %file_table or any configuration
-# variable.
-#
-# Its name can be set using the $site_package_name variable, for instance,
-# in your .htmlxpressrc file. When $site_package_name is set to "site",
-# we expect to find a "site.pm" file:
-#
-#       package site;  # assumes site.pm
-#
-#       use strict;
-#       use warnings;
-#
-#       BEGIN {
-#          our $VERSION     = 1.00;
-#       }
-#
-#       # Hard-coded destination directory:
-#       our $destination = "/Library/Web Pages/";	# absolute path
-#
-#       # We don't like "YYY-MM-DD" dates
-#       our $date_format = "%a %b %e %H:%M:%S %Y";      # for POSIX::strftime
-#
-#       sub pre_process($$)
-#       {
-#           my ($filename, $type) = @_;
-#           # insert code here.
-#       }
-#
-#       # This is where your site-specific code processing should be done.
-#       sub process($$)
-#       {
-#           my ($filename, $type) = @_;
-#           # insert code here.
-#       }
-#
-#       sub post_process($$)
-#       {
-#           my ($filename, $type) = @_;
-#           # insert code here.
-#       }
-#
-#       1;  # don't forget to return a true value from the file
-
-if ($site_package_name ne "") {
-
-    eval "use $site_package_name";
-
-    # Activate site-specific settings.
-    foreach my $varname ( "add_banner", "curl_exec", "date_format",
-                "default_creator", "destination", "hxpr_start", "hxpr_end",
-		"set_file_exec", "site_package_name", "xml_lint_command" ) {
-        $$varname = ${"${site_package_name}::$varname"}
-                if (defined(${"${site_package_name}::$varname"}));
-    }
-}
-
-
-# -------------------------------------------------------------------------
 # Date Formatting
 # -------------------------------------------------------------------------
 
@@ -336,9 +263,18 @@ our $date;                      # The custom date format.
 if ($date_format ne "") {
     use POSIX qw(strftime);
     $date = strftime $date_format, localtime();
+
 } else {
     $date = $longdate;
 }
+
+
+# -------------------------------------------------------------------------
+# Load configuration file
+# -------------------------------------------------------------------------
+# The user may like to change the above variables (as described above).
+
+do "$ENV{HOME}/.htmlxpressrc";
 
 
 # -------------------------------------------------------------------------
@@ -399,10 +335,77 @@ if ($debug) {
     # Debug settings
     print "Variables:\n";
     foreach my $varname ( "add_banner", "curl_exec", "date_format",
-                "default_creator", "destination", "hxpr_start",
+                "default_creator", "destination", "hxpr_beg",
 		"hxpr_end", "set_file_exec",
                 "site_package_name", "xml_lint_command" ) {
         print "\t\$$varname = \"$$varname\";\n";
+    }
+}
+
+
+# =========================================================================
+# Load the site definitions
+# =========================================================================
+# Site-specific settings are stored in a ".pm" package which is usually
+# located in the same directory as the source files (it is located via "."
+# in @INC when htmlXPress is executed within that directory).
+#
+# It typically defines the pre_process, process, and post_process routines,
+# but it may also define changes to the %file_table or any configuration
+# variable.
+#
+# Its name can be set using the $site_package_name variable, for instance,
+# in your .htmlxpressrc file. When $site_package_name is set to "site",
+# we expect to find a "site.pm" file:
+#
+#       package site;  # assumes site.pm
+#
+#       use strict;
+#       use warnings;
+#
+#       BEGIN {
+#          our $VERSION     = 1.00;
+#       }
+#
+#       # Hard-coded destination directory:
+#       our $destination = "/Library/Web Pages/";	# absolute path
+#
+#       # We don't like "YYY-MM-DD" dates
+#       our $date_format = "%a %b %e %H:%M:%S %Y";      # for POSIX::strftime
+#
+#       sub pre_process($$)
+#       {
+#           my ($filename, $type) = @_;
+#           # insert code here.
+#       }
+#
+#       # This is where your site-specific code processing should be done.
+#       sub process($$)
+#       {
+#           my ($filename, $type) = @_;
+#           # insert code here.
+#       }
+#
+#       sub post_process($$)
+#       {
+#           my ($filename, $type) = @_;
+#           # insert code here.
+#       }
+#
+#       1;  # don't forget to return a true value from the file
+
+if ($site_package_name ne "") {
+    print "+ use $site_package_name\n" if $debug;
+    eval "use $site_package_name";
+
+    # Activate site-specific settings.
+    foreach my $varname ( "add_banner", "curl_exec", "date_format",
+                "default_creator", "destination", "hxpr_beg", "hxpr_end",
+		"set_file_exec", "xml_lint_command" ) {
+	if (defined(${"${site_package_name}::$varname"})) {
+	    print "      + \$$varname\n" if $debug;
+	    $$varname = ${"${site_package_name}::$varname"};
+	}
     }
 }
 
@@ -414,21 +417,18 @@ if ($debug) {
 
 $file_table{"default"}{"creator"} = $default_creator;
 
-if ($site_package_name ne "")
-{
+if ($site_package_name ne "") {
     # Site-specific file_table entries take precedence.
     # New settings are appended.
 
-    if (%{"${site_package_name}::file_table"})
-    {
-        print "- Importing site-specific data\n" if $verbose;
+    if (%{"${site_package_name}::file_table"}) {
+        print "- Importing site-specific file table\n" if $verbose;
+	my %table = %{"${site_package_name}::file_table"};
 
-        foreach my $type ( keys(%{"${site_package_name}::file_table"}) )
-        {
-            foreach my $code ( keys(%{"${site_package_name}::file_table{$type}"}) )
-            {
-                $file_table{$type}{$code} = ${"${site_package_name}::file_table{$type}{$code}"};
-                print "\t$type.$code => $file_table{$type}{$code}\n" if $debug;
+        foreach my $type ( keys(%table) ) {
+            foreach my $code ( keys($table{"$type"}) ) {
+                $file_table{$type}{$code} = $table{$type}{$code};
+                print "\t$type.$code => $table{$type}{$code}\n" if $debug;
             }
         }
     }
@@ -447,12 +447,10 @@ print "- Expanding the file table\n" if $verbose;
 
 my $done;
 
-do
-{
+do {
     $done = 1;
 
-    foreach my $type ( keys(%file_table) )
-    {
+    foreach my $type ( keys(%file_table) ) {
         next if $type eq "default";
 
         # If no "copy_from" entry is defined, use "copy_from" => "default"
@@ -487,7 +485,6 @@ do
             $file_table{$type}{"copy_from"} = "default";
 
         } else {
-
             # The master type has not inherited the settings from
             # the default type yet - postpone this for one iteration.
             $done = 0;
@@ -796,13 +793,14 @@ foreach my $c ( keys(%char2entity) ) {
     $char2entity{$c} = "&" . $char2entity{$c} . ";";
 }
 
-sub encode_entities
-{
+sub encode_entities {
     return undef unless defined $_[0];
     my $ref;
+
     if (defined wantarray) {
 	my $x = $_[0];
 	$ref = \$x;     # copy
+
     } else {
 	$ref = \$_[0];  # modify in-place
     }
@@ -837,8 +835,7 @@ sub encode_entities_numeric {
 # Main Loop
 # =========================================================================
 
-FILE : foreach my $file ( @ARGV )
-{
+FILE : foreach my $file ( @ARGV ) {
     # ---------------------------------------------------------------------
     # Read the file and determine its file type
 
@@ -850,7 +847,6 @@ FILE : foreach my $file ( @ARGV )
     $outdir = dirname($file) if $overwrite;
 
     unless ($file eq "-") {
-
         # Determine the file type.
         if ($file =~ m/\.(\w+)$/) {
             $type = $1;
@@ -870,6 +866,7 @@ FILE : foreach my $file ( @ARGV )
     if (defined($outfile)) {
 	# The use gave us a specific file name.
         $file = catfile( $outdir, $outfile );
+
     } elsif ($file ne "-") {
         # the result file is to be stored in a different directory.
         $file = catfile( $outdir, $filename ) unless $overwrite;
@@ -891,8 +888,7 @@ FILE : foreach my $file ( @ARGV )
     # ---------------------------------------------------------------------
     # File Processing
 
-    LINE : while (<$IN>)
-    {
+    LINE : while (<$IN>) {
         next LINE unless $_;
 
         # -----------------------------------------------------------------
@@ -902,6 +898,7 @@ FILE : foreach my $file ( @ARGV )
         if (defined(&{"${site_package_name}::pre_process"})) {
             print "- ${site_package_name}::pre_process\n" if $verbose;
             &{"${site_package_name}::pre_process"}($filename, $type);
+
         } elsif ($verbose) {
             print "? ${site_package_name}::pre_process\n";
         }
@@ -913,9 +910,9 @@ FILE : foreach my $file ( @ARGV )
         my $i;
 
         # Detect whether it is an XML file.
-        if (m/^<\??XML([^\?>]*)\??>/i) {
-            $i = $1;
-            $xmlver = $1 if ($i =~ m/version="(\d+\.\d+)"/i);
+        if (m/^<(\??)XML([^\?>]*)\g1>/i) {
+            $i = $2;
+            $xmlver = $2 if ($i =~ m/version="(\d+\.\d+)"/i);
 ##          $type = "xml";
             $isxml = 1;
         }
@@ -933,6 +930,7 @@ FILE : foreach my $file ( @ARGV )
         if (defined (&{"${site_package_name}::process"})) {
             print "- ${site_package_name}::process\n" if $verbose;
             &{"${site_package_name}::process"}($filename, $type);
+
         } elsif ($verbose) {
             print "? ${site_package_name}::process\n";
         }
@@ -941,11 +939,11 @@ FILE : foreach my $file ( @ARGV )
         # -----------------------------------------------------------------
         # special keywords: <<longdate>> <<date>> <<file>>
 
-        s/${hxpr_start}longdate${hxpr_end}/$longdate/ig;
-        s/${hxpr_start}date${hxpr_end}/$date/ig;
-        s/${hxpr_start}file${hxpr_end}/$filename/ig;
+        s/${hxpr_beg}longdate${hxpr_end}/$longdate/ig;
+        s/${hxpr_beg}date${hxpr_end}/$date/ig;
+        s/${hxpr_beg}file${hxpr_end}/$filename/ig;
 
-        $wrap = 0 if s/${hxpr_start}nowrap${hxpr_end}//ig;
+        $wrap = 0 if s/${hxpr_beg}nowrap${hxpr_end}//ig;
 
 
         # -----------------------------------------------------------------
@@ -959,13 +957,13 @@ FILE : foreach my $file ( @ARGV )
             # XHTML, HTML in XML format.
             if ($xmlver eq "1.0") {
                 # XHTML 1.0 declaration
-                if (s|${hxpr_start}doctype\s+(\S+?)${hxpr_end}|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 \u$1//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-\L$1\E.dtd">|i)
+                if (s|${hxpr_beg}doctype\s+(\S+?)${hxpr_end}|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 \u$1//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-\L$1\E.dtd">|i)
                 { $page = $1; }
             } else {
                 # XHTML 1.1 (or above?) declaration
                 $i = $xmlver;
                 $i =~ s/\.//g;
-                s|${hxpr_start}doctype\s+\S+?${hxpr_end}|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML $xmlver//EN" "http://www.w3.org/TR/xhtml$i/DTD/xhtml$i.dtd">|i;
+                s|${hxpr_beg}doctype\s+\S+?${hxpr_end}|<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML $xmlver//EN" "http://www.w3.org/TR/xhtml$i/DTD/xhtml$i.dtd">|i;
             }
 
             s|<html>|<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">|i;
@@ -976,15 +974,14 @@ FILE : foreach my $file ( @ARGV )
             s|<(img [^>]+[^>/])>|<$1/>|ig;           # ditto for <img />
 
         } else {
-
             # standard HTML 4.01 declaration
-            if (m|${hxpr_start}doctype\s+(\S+?)${hxpr_end}|) {
+            if (m|${hxpr_beg}doctype\s+(\S+?)${hxpr_end}|) {
                 my $mode = $page = "\L$1\E";
                 $page = "loose"  if ($page eq "transitional");
                 $mode = ""  if ($mode eq "strict");
                 $mode = " \u$mode"  if $mode;
 
-                s|${hxpr_start}doctype\s+(\S+?)${hxpr_end}|<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01$mode//EN" "http://www.w3.org/TR/html4/\L$page\E.dtd">|g;
+                s|${hxpr_beg}doctype\s+(\S+?)${hxpr_end}|<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01$mode//EN" "http://www.w3.org/TR/html4/\L$page\E.dtd">|g;
             }
         }
 
@@ -992,8 +989,7 @@ FILE : foreach my $file ( @ARGV )
         # -----------------------------------------------------------------
         # Convert Non-ASCII characters
 
-        if ($file_table{$type}{"non_ascii"} > 0)
-        {
+        if ($file_table{$type}{"non_ascii"} > 0) {
             # Exchange special characters by their HTML code
             # NB. This section is incomplete - only common chars are handled.
 
@@ -1003,15 +999,13 @@ FILE : foreach my $file ( @ARGV )
             # This is to combine wide Unicode code sequences where possible.
             $_ = NFC($_);
 
-            if ($type eq "xml" || $isxml)
-            {
+            if ($type eq "xml" || $isxml) {
                 # In XML, most name symbols are not automatically defined.
                 # To avoid having to do just that, we insert their number
                 # equivalent instead.
 		&encode_entities_numeric($_);
 
 	    } else {
-
 		&encode_entities($_);
 	    }
         }
@@ -1035,8 +1029,7 @@ FILE : foreach my $file ( @ARGV )
             while (s!(?:^|\s+)//.*?\n!\n!g) { };  # comments after ' //'
 
             # /* comments */
-            while (m!(?:^|\s+)/\*!)
-            {
+            while (m!(?:^|\s+)/\*!) {
                 s|/\*[^\n]*?\*/||g;    # remove single-line comments
                 s|(/\*.*?)\n|$1|;      # otherwise concat lines
             }
@@ -1082,8 +1075,7 @@ FILE : foreach my $file ( @ARGV )
         # -----------------------------------------------------------------
         # Additional compression
 
-        if ($file_table{$type}{"compress"} > 1)
-        {
+        if ($file_table{$type}{"compress"} > 1) {
             # This may not be recommended (for instance with style sheets).
 ##          s|<(/?)address((\s[^>]*)?)>|<$1i$2>|ig;   # <address> -> <i>
 ##          s|<(/?)code((\s[^>]*)?)>|<$1tt$2>|ig;     # <code>    -> <tt>
@@ -1095,8 +1087,7 @@ FILE : foreach my $file ( @ARGV )
         # -----------------------------------------------------------------
         # Whitespace removal
 
-        if ($file_table{$type}{"compress"} > 0)
-        {
+        if ($file_table{$type}{"compress"} > 0) {
             # We remove pretty much all whitespace caracters except in
             # <pre> sections.
 
@@ -1120,6 +1111,7 @@ FILE : foreach my $file ( @ARGV )
                 s/\s+({|}|:|;|,)/$1/g;  # no spaces before punctuation marks
                 s/({|}|:|;|,)\s+/$1/g;  # or after them
                 s/;}/}/g;               # no ; before } required
+
             } else {
                 # No spaces around certain HTML tags.
                 s!\s*(</?(blockquote|br|center|div|font|li|p|table|td|th|tr|ul|wbr))(\s+[^>]+>|>)\s*!$1$3!ig;
@@ -1136,6 +1128,7 @@ FILE : foreach my $file ( @ARGV )
         if ($add_banner) {
             if ($type eq "css") {
                 s|^|/* $copyright */\n\n|;
+
             } else {
                 s/(<html[^>]*>)/$1\n\n<!-- $copyright -->\n\n/i;
             }
@@ -1152,6 +1145,7 @@ FILE : foreach my $file ( @ARGV )
             if ($type eq "xml" || $isxml) {
                 s|(script">)\s*<!==\s|$1\n<!--\n|ig;    # script">\n<![CDATA[\n
                 s|(//\s*)==>(</script>)|$1-->\n$2|ig;   # // ]]>\n</script>
+
             } else {
                 s|(script">)\s*<!==\s|$1\n<!--\n|ig;    # script">\n<!--\n
                 s|(//\s*)==>(</script>)|$1-->\n$2|ig;   # // -->\n</script>
@@ -1162,8 +1156,7 @@ FILE : foreach my $file ( @ARGV )
         # -----------------------------------------------------------------
         # Text Wrapping
 
-        if ($wrap > 0)
-        {
+        if ($wrap > 0) {
             # We only wrap lines in the absence of JavaScripts as it has
             # proven to corrupt the scripts.
 
@@ -1198,10 +1191,16 @@ FILE : foreach my $file ( @ARGV )
             s|<:s:>| |g;   s|<:t:>|\t|g;   s|<:n:>|\n|g;
         }
 
-        # check if any undetected macros are left
+        # Check if any undetected <:macros:> are left
 	my %tokens;
-        foreach my $macro ( m|(${hxpr_start}.*?${hxpr_end})|i ) {
+        foreach my $macro ( m|(${hxpr_beg}.*?${hxpr_end})|i ) {
 	    $tokens{"$macro"} = 1;
+	}
+
+	unless (%tokens) {
+	    # Check if <:begin or end:> tokens exist
+	    foreach my $macro ( m|(${hxpr_beg}\S*)|i ) { $tokens{"$macro"} = 1; }
+	    foreach my $macro ( m|(\S*${hxpr_end})|i ) { $tokens{"$macro"} = 1; }
 	}
 
 	if (%tokens) {
@@ -1212,28 +1211,25 @@ FILE : foreach my $file ( @ARGV )
         # -----------------------------------------------------------------
         # Check embedded links
 
-        if ($verbose || $href_check)
-        {
+        if ($verbose || $href_check) {
             my( $href, $anchor, $tmp, %href_table );
             $tmp = "/tmp/htmlXPress-$$";
             %href_table = ();
 
             print "- Links:\n" if $verbose;
 
-            while (m|href="([^"]+)"|gc)
-            {
-                unless ($href_table{$href=$1})
-                {
+            while (m|href="([^"]+)"|gc) {
+                unless ($href_table{$href=$1}) {
                     print "\t$href\n";
                     $href_table{$href} = 1;
-                    if ($href_check)
-                    {
+                    if ($href_check) {
                         if ($href =~ m'^(?:http|ftp)://') {
                             # external link - get the page header (then delete it)
                             system("$curl_exec --head --silent -o $tmp $href");
                             system("rm $tmp");
                             print STDERR "Error: Broken link to $href (" . ($?>>8) . ")\n"
                                 if (( $? >> 8 ) > 0);
+
                         } else {
                             $anchor = ($href =~ s/(\S+)#(\S+)/$1/) ? $2 : "";
                             print STDERR "Warning: Check anchor \"$anchor\" in \"$href\".\n"
@@ -1250,6 +1246,7 @@ FILE : foreach my $file ( @ARGV )
         if (defined (&{"${site_package_name}::post_process"})) {
             print "- ${site_package_name}::post_process\n" if $verbose;
             &{"${site_package_name}::post_process"}($filename, $type);
+
         } elsif ($verbose) {
             print "? ${site_package_name}::post_process\n";
         }
@@ -1269,6 +1266,7 @@ FILE : foreach my $file ( @ARGV )
         print " (overwriting)" if -e $file;
         print "\n";
     }
+
     open(my $OUT, ">" . $file ) or die "Cannot open '$file': $!, stopped";
     print $OUT $out;
     close $OUT;
