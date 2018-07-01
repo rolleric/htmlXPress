@@ -4,7 +4,7 @@ This is a Perl-based solution to compress, and to process HTML and CSS files.
 
 The `htmlXPress.pl` script removes embedded comments and unnecessary whitespace, while leaving the formatting of the page intact. Embedded PHP code or Javascript are also not harmed.
 
-Before this compression takes place, the script also expands custom macros like `<<date>>` (note the double `<<` and `>>`) which will be replaced with today's date.
+Before this compression takes place, the script also expands custom macros like `<:date:>` (note the `<:` and `:>`) which will be replaced with today's date.
 
 You can easily extend the processing with your own macros and other site-specific Perl code.
 
@@ -95,6 +95,11 @@ You can create a config file in your home directory, named `.htmlxpressrc` in wh
 ```perl
 # ~/.htmlxpressrc - config for htmlXPress.pl
 
+# The HTML-like markers that are used to delimit custom macros.
+# Example: <<date>> or <:date:>.
+## $hxpr_beg = "(?:<<|<:)";
+## $hxpr_end = "(?:>>|:>)";
+
 # Whether to add an htmlXPress version banner.
 ## $add_banner = 1;
 
@@ -143,7 +148,7 @@ sub process($$)
 {
     my ( $filename, $type ) = @_;       # e.g. "example.html", "html"
 
-    s|<<email>>|info\@example.com|g;    # <<email>>  ->  info@example.com
+    s|<:email:>|info\@example.com|g;    # <:email:>  ->  info@example.com
 }
 
 1;  # always return a true value!
@@ -199,10 +204,10 @@ The following macros are predefined:
 
 | Macro         | Description
 | :------------ | :--------------------------------------------------------
-| `<<date>>`    | Is replaced by today's date, using the format specified in the $date_format variable.
-| `<<longdate>>`| Is replaced by today's date, using the default format of your locale.
-| `<<file>>`    | Is replaced by the current file name.
-| `<<nowrap>>`  | Is removed. It disables text wrapping for this file.
+| `<:date:>`    | Is replaced by today's date, using the format specified in the $date_format variable.
+| `<:longdate:>`| Is replaced by today's date, using the default format of your locale.
+| `<:file:>`    | Is replaced by the current file name.
+| `<:nowrap:>`  | Is removed. It disables text wrapping for this file.
 
 
 Also, there are some handy shortcuts that are available when non-ASCII character replacement is enabled (these changed in version 4.1):
