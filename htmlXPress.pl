@@ -912,7 +912,7 @@ FILE : foreach my $file ( @ARGV ) {
         # Detect whether it is an XML file.
         if (m/^<(\??)XML([^\?>]*)\g1>/i) {
             $i = $2;
-            $xmlver = $2 if ($i =~ m/version="(\d+\.\d+)"/i);
+            $xmlver = $1 if ($i =~ m/version="(\d+\.\d+)"/i);
 ##          $type = "xml";
             $isxml = 1;
         }
