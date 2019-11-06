@@ -20,6 +20,10 @@ my $version = "4.4";
 
 # Version History
 # ===============
+# 2019-11-06  4.4
+#    Adds support to set $debug in the site package.
+#    The default $destination is now ".".
+#
 # 2018-06-23  4.3
 #    Added an alternative marker style: <:nowrap:> ($hxpr_beg, $hxpr_end).
 #    This is to avoid error markers in vim's syntax highlighting.
