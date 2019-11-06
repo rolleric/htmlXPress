@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-my $version = "4.3";
+my $version = "4.4";
 
 # Version History
 # ===============
@@ -139,7 +139,7 @@ our $default_creator = "";
 # The default output directory, unless given at the command line using the
 # -out argument.
 
-our $destination = "";
+our $destination = ".";
 
 
 # -------------------------------------------------------------------------
@@ -318,14 +318,6 @@ pod2usage(-verbose => $help) if $help;
 
 $verbose = 1 if $debug;
 
-unless ($overwrite) {
-    $outdir = $destination unless defined($outdir);
-    unless (-d "$outdir") {
-	$outfile = basename("$outdir");
-	$outdir  = dirname("$outdir");
-    }
-}
-
 print "$prog, starting on $longdate\n" if $verbose;
 
 if ($debug) {
@@ -367,6 +359,8 @@ if ($debug) {
 #          our $VERSION     = 1.00;
 #       }
 #
+#	our $debug = 0;
+#
 #       # Hard-coded destination directory:
 #       our $destination = "/Library/Web Pages/";	# absolute path
 #
@@ -397,6 +391,11 @@ if ($debug) {
 if ($site_package_name ne "") {
     print "+ use $site_package_name\n" if $debug;
     eval "use $site_package_name";
+
+    if (defined(${"${site_package_name}::debug"}) && $debug) {
+	print "+ \$${site_package_name}::debug = $debug\n";
+	${"${site_package_name}::debug"} = $debug;
+    }
 
     # Activate site-specific settings.
     foreach my $varname ( "add_banner", "curl_exec", "date_format",
@@ -834,6 +833,14 @@ sub encode_entities_numeric {
 # =========================================================================
 # Main Loop
 # =========================================================================
+
+unless ($overwrite) {
+    $outdir = $destination unless defined($outdir);
+    unless (-d "$outdir") {
+	$outfile = basename("$outdir");
+	$outdir  = dirname("$outdir");
+    }
+}
 
 FILE : foreach my $file ( @ARGV ) {
     # ---------------------------------------------------------------------
